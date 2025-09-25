@@ -23,13 +23,19 @@ def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", retu
     """
     Queries a feature layer from the Esri Living Atlas.
 
-    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, sample-points.
-    :param where: The WHERE clause for the query.
-    :param out_fields: The fields to return.
-    :param return_count_only: Whether to return only the count of features.
-    :param spatial_filter: A spatial filter in Esri JSON format.
-    :param return_geometry: Whether to return geometry in the features.
-    :return: The JSON response from the server.
+    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points.
+    :param where: The WHERE clause for the query. Use field names like 'STATE' for state (e.g., "STATE = 'MI'"), 'NAME' for names, etc. Default is "1=1" for all features.
+    :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all fields.
+    :param return_count_only: Set to true to return only the feature count, not the data.
+    :param spatial_filter: A spatial filter in Esri JSON format (optional).
+    :param return_geometry: Set to true to include geometry in the response.
+
+    Examples:
+    - Count USGS gages in Michigan: layer_name="usgs-gauges", where="STATE = 'MI'", return_count_only=true
+    - Get state boundaries: layer_name="states", where="STATE_NAME = 'Michigan'", return_geometry=true
+    - Query rivers in Virginia: layer_name="rivers", where="State = 'VA'"
+
+    :return: The JSON response from the server, or {"error": "message"} if failed.
     """
     if layer_name not in LAYER_MAPPING:
         return {"error": f"Invalid layer name: {layer_name}. Available layers: {list(LAYER_MAPPING.keys())}"}
@@ -60,7 +66,7 @@ def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", retu
             params["geometry"] = f"{geometry_obj['xmin']},{geometry_obj['ymin']},{geometry_obj['xmax']},{geometry_obj['ymax']}"
             params["geometryType"] = "esriGeometryEnvelope"
         params["spatialRel"] = "esriSpatialRelIntersects"
-    response = requests.post(query_url, data=params, headers=headers)
+    response = requests.post(query_url, data=params, headers=headers, timeout=30)
 
     response.raise_for_status()
     return response.json()
@@ -80,7 +86,7 @@ def get_layer_fields(layer_name: str) -> dict:
     params = {
         "f": "json"
     }
-    response = requests.get(layer_url, params=params)
+    response = requests.get(layer_url, params=params, timeout=30)
     print(f"Raw response for {layer_name}: {response.text}")
     response.raise_for_status()
     return {"fields": response.json().get("fields", [])}
@@ -101,12 +107,106 @@ def get_state_geometry(state_name: str) -> dict:
         "returnGeometry": "true",
         "f": "json"
     }
-    response = requests.get(f"{states_layer_url}/query", params=params)
+    response = requests.get(f"{states_layer_url}/query", params=params, timeout=30)
     response.raise_for_status()
     features = response.json().get("features", [])
     if features:
         return features[0]["geometry"]
     return {"error": f"State \'{state_name}\' not found or has no geometry."}
+
+@app.tool()
+def query_geojson(layer_name: str, where: str = "1=1", out_fields: str = "*", limit: int = 1000) -> str:
+    """
+    Queries a feature layer and returns the results as a GeoJSON string.
+
+    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points.
+    :param where: The WHERE clause for the query (e.g., "STATE = 'MI'").
+    :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all.
+    :param limit: Maximum number of features to return (default 1000).
+    :return: A GeoJSON FeatureCollection as a string, or error message.
+    """
+    if layer_name not in LAYER_MAPPING:
+        return f"Error: Invalid layer name '{layer_name}'. Available: {list(LAYER_MAPPING.keys())}"
+
+    layer_url = LAYER_MAPPING[layer_name]
+    query_url = f"{layer_url}/query?f=json"
+
+    params = {
+        "where": where,
+        "outFields": out_fields,
+        "returnGeometry": "true",
+        "resultRecordCount": str(limit),
+        "outSR": "4326"  # WGS84 for GeoJSON
+    }
+
+    try:
+        response = requests.post(query_url, data=params, headers={"Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if "error" in data:
+            return f"Query error: {data['error']}"
+
+        features = data.get("features", [])
+        geojson = {
+            "type": "FeatureCollection",
+            "features": []
+        }
+
+        for feature in features:
+            geom = feature.get("geometry", {})
+            props = feature.get("attributes", {})
+
+            # Convert Esri geometry to GeoJSON
+            if "x" in geom and "y" in geom:
+                # Point
+                geojson_geom = {
+                    "type": "Point",
+                    "coordinates": [geom["x"], geom["y"]]
+                }
+            elif "rings" in geom:
+                # Polygon
+                geojson_geom = {
+                    "type": "Polygon",
+                    "coordinates": geom["rings"]
+                }
+            elif "paths" in geom:
+                # Polyline
+                geojson_geom = {
+                    "type": "LineString",
+                    "coordinates": geom["paths"][0] if geom["paths"] else []
+                }
+            else:
+                geojson_geom = None
+
+            if geojson_geom:
+                geojson["features"].append({
+                    "type": "Feature",
+                    "geometry": geojson_geom,
+                    "properties": props
+                })
+
+        return json.dumps(geojson, indent=4)
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+@app.tool()
+def save_geojson(content: str, file_path: str) -> str:
+    """
+    Saves a GeoJSON string to a file.
+
+    :param content: The GeoJSON string content.
+    :param file_path: The absolute path where to save the file (e.g., "/path/to/data.geojson").
+    :return: Success message or error.
+    """
+    try:
+        with open(file_path, 'w') as f:
+            f.write(content)
+        return f"GeoJSON saved to {file_path}"
+    except Exception as e:
+        return f"Error saving file: {str(e)}"
+
 
 @app.tool()
 def display_geojson(geojson_path: str) -> str:
@@ -118,7 +218,7 @@ def display_geojson(geojson_path: str) -> str:
     """
     import subprocess
     try:
-        result = subprocess.run(["geojsonio", geojson_path], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["geojsonio", geojson_path], capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             return "GeoJSON displayed in browser successfully."
         else:
