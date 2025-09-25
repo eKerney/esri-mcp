@@ -424,7 +424,7 @@ def create_water_map_context(geojson_path: str) -> str:
        }});
        const damsLayer = new FeatureLayer({{
          url: "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/NID_v1/FeatureServer/0",
-         definitionExpression: "State = 'Virginia'",
+         definitionExpression: "State = '{state}'",
          title: "Dams",
          opacity: 0.6,
          renderer: {{
