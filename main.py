@@ -502,4 +502,8 @@ def create_water_map_context(geojson_path: str) -> str:
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
-    app.run()
+    import sys
+    if "--http" in sys.argv:
+        app.run(transport="http", port=8000)
+    else:
+        app.run()
