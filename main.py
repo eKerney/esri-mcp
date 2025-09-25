@@ -60,9 +60,7 @@ def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", retu
             params["geometry"] = f"{geometry_obj['xmin']},{geometry_obj['ymin']},{geometry_obj['xmax']},{geometry_obj['ymax']}"
             params["geometryType"] = "esriGeometryEnvelope"
         params["spatialRel"] = "esriSpatialRelIntersects"
-        response = requests.post(query_url, data=params, headers=headers)
-    else:
-        response = requests.get(query_url, params=params, headers=headers)
+    response = requests.post(query_url, data=params, headers=headers)
 
     response.raise_for_status()
     return response.json()
