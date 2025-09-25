@@ -1,0 +1,6 @@
+*.html
+*.geojson
+__pycache__/
+*.pyc
+.venv/
+.env
