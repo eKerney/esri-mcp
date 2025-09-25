@@ -28,7 +28,7 @@ brew install sst/tap/opencode
         "firecrawl-mcp"
       ],
       "env": {
-        "FIRECRAWL_API_KEY": "fc-1e0ecd9e0788447c8a4b46731fb73541"
+        "FIRECRAWL_API_KEY": ""
       }
     }
   }
