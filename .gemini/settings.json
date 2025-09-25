@@ -1,8 +1,15 @@
 {
   "mcpServers": {
     "Esri Living Atlas": {
-      "command": "/Users/erickerney/dev/ai/.venv/bin/python",
-      "args": ["/Users/erickerney/dev/ai/esri-mcp/main.py"]
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "/Users/erickerney/dev/ai/esri-mcp/main.py"
+      ]
     }
   }
 }
