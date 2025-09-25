@@ -325,14 +325,29 @@ def create_water_map_context(geojson_path: str) -> str:
     try:
         with open(geojson_path, 'r') as f:
             geojson = json.load(f)
-        
+
         # Get state from the first feature's properties
         features = geojson.get("features", [])
         if not features:
             return "Error: No features found in GeoJSON."
-        state = features[0].get("properties", {}).get("state")
-        if not state:
+        state_abbr = features[0].get("properties", {}).get("state")
+        if not state_abbr:
             return "Error: State not found in GeoJSON properties."
+
+        # Map abbreviations to full state names for dams filter
+        state_abbr_to_name = {
+            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+            'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+            'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+            'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+            'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+            'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+            'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+            'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+            'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+        }
+        state = state_abbr_to_name.get(state_abbr, state_abbr)
         
         # Compute center from GeoJSON
         coords = []
@@ -440,9 +455,10 @@ def create_water_map_context(geojson_path: str) -> str:
          }},
          popupTemplate: {{
            title: "Dam",
-           content: "Name: {{NAME}}<br>Type: {{PRIMARY_DAM_TYPE}}<br>Height: {{NID_HEIGHT}} ft<br>State: {{State}}"
+           content: "Name: {{NAME}}<br>Type: {{PRIMARY_DAM_TYPE}}<br>Height: {{NID_HEIGHT}} ft<br>State: {{STATE}}"
          }}
        }});
+       console.log("Dams filter:", damsLayer.definitionExpression);
       const map = new Map({{
         basemap: "dark-gray-vector",
         layers: [watershedsLayer, riversLayer, damsLayer, gagesLayer]  // Order: base to top
@@ -486,4 +502,4 @@ def create_water_map_context(geojson_path: str) -> str:
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
-    app.run(transport="http", port=8000)
+    app.run()
