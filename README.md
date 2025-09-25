@@ -29,6 +29,20 @@ An MCP (Model Context Protocol) server for querying and visualizing data from th
 
 Start the server and connect via MCP clients. See `scripts/` for example usage.
 
+Alternatively, use `clients.py` for command-line interaction:
+
+```bash
+# List available tools
+python clients.py list-tools
+
+# Call a tool
+python clients.py call-tool query_layer layer_name usgs-gauges where "state = 'MI'"
+```
+
+## Usage
+
+Start the server and connect via MCP clients. See `scripts/` for example usage.
+
 ## Repository Structure
 
 - `main.py`: Main MCP server
