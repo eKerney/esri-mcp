@@ -28,10 +28,22 @@ function App() {
     initializeGemini()
   }, [])
 
-  const initializeGemini = () => {
-    const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    setModel(model)
+  const initializeGemini = async () => {
+    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY
+    if (!apiKey) {
+      console.error('VITE_GOOGLE_API_KEY not set')
+      return
+    }
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+      const data = await response.json()
+      console.log('Available Gemini models:', data.models?.map((m: any) => m.name) || 'None')
+      const genAI = new GoogleGenerativeAI(apiKey)
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+      setModel(model)
+    } catch (error) {
+      console.error('Gemini init failed:', error)
+    }
   }
 
   const sendMCPRequest = async (method: string, params: any = {}): Promise<any> => {
@@ -117,20 +129,20 @@ function App() {
 
     try {
       // Prepare tools in Gemini format
-      const geminiTools = tools.map(tool => ({
-        functionDeclaration: {
+      const geminiTools = [{
+        functionDeclarations: tools.map(tool => ({
           name: tool.name,
-          description: tool.description.split('\n')[0],
+          description: tool.description.split('\n')[0] + ' Available layers: states (use STATE_NAME = \'Michigan\'), counties (use STATEFP = \'26\'), usgs-gauges (use state = \'MI\'), rivers (use State = \'VA\'), dams, watersheds, impaired-waters, water-quality, sample-points.',
           parameters: tool.inputSchema
-        }
-      }))
+        }))
+      }]
 
       const chat = model.startChat({
         tools: geminiTools
       })
 
-      const result = await chat.sendMessage(query)
-      const response = result.response
+      let result = await chat.sendMessage(query)
+      let response = result.response
       console.log('Gemini response:', response)
 
       const functionCalls = response.functionCalls()
@@ -139,19 +151,26 @@ function App() {
         const toolName = call.name
         const args = call.args
         console.log('Calling tool:', toolName, 'with args:', args)
+
+        // Call the tool
         const toolResult = await callTool(toolName, args)
-        setResult(JSON.stringify(toolResult, null, 2))
+        console.log('Tool result:', toolResult)
+
+        // Send the tool result back to the model
+        const functionResponse = {
+          name: toolName,
+          response: toolResult
+        }
+
+        result = await chat.sendMessage([{
+          functionResponse
+        }])
+
+        response = result.response
+        setResult(response.text() || JSON.stringify(toolResult, null, 2))
       } else {
         // No tool call
         setResult(response.text() || 'I can help you with geospatial data queries. Try asking about USGS gages, rivers, counties, or other geographic features.')
-        return
-      }
-
-      if (llmResponse.tool && llmResponse.args) {
-        const toolResult = await callTool(llmResponse.tool, llmResponse.args)
-        setResult(JSON.stringify(toolResult, null, 2))
-      } else {
-        setResult('No tool needed for this query, or unable to determine tool.')
       }
     } catch (error) {
       console.error('Query failed:', error)

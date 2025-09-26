@@ -34,3 +34,14 @@ brew install sst/tap/opencode
   }
 ```
 
+
+I should have taking better notes, tried several differing approaches.  
+Currently working with Web LLM in browser LLM to call the esri tools. 
+It's not working very good.   
+Opencode/Grok is going to try connecting us to a cloud hosted model Gemini which I can use for free.   
+Perhaps this will yield better results for tool calling.   
+Gemini was NOT doing very  good with the CLI.   
+
+Currently amd running the esri mcp as a local FastMCP server to access via http.   
+It works great through the CLI though I am trying to access it via an app now, much more difficult.  
+BTW love that opencode automatically copies whenever I highlight with mouse 

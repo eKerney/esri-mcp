@@ -42,14 +42,14 @@ def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", retu
     Queries a feature layer from the Esri Living Atlas.
 
     :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points.
-    :param where: The WHERE clause for the query. Use field names like 'STATE' for state (e.g., "STATE = 'MI'"), 'NAME' for names, etc. Default is "1=1" for all features.
+    :param where: The WHERE clause for the query. Use field names like 'state' for usgs-gauges (e.g., "state = 'MI'"), 'STATE_NAME' for states (e.g., "STATE_NAME = 'Michigan'"), 'State' for rivers (e.g., "State = 'VA'"), etc. Default is "1=1" for all features.
     :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all fields.
     :param return_count_only: Set to true to return only the feature count, not the data.
     :param spatial_filter: A spatial filter in Esri JSON format (optional).
     :param return_geometry: Set to true to include geometry in the response.
 
     Examples:
-    - Count USGS gages in Michigan: layer_name="usgs-gauges", where="STATE = 'MI'", return_count_only=true
+    - Count USGS gages in Michigan: layer_name="usgs-gauges", where="state = 'MI'", return_count_only=true
     - Get state boundaries: layer_name="states", where="STATE_NAME = 'Michigan'", return_geometry=true
     - Query rivers in Virginia: layer_name="rivers", where="State = 'VA'"
 
