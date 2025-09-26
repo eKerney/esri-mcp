@@ -654,9 +654,23 @@ def create_embeddable_water_map(state: str) -> str:
         'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
         'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
         'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
-        'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+        'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+        'DC': 'District of Columbia'
     }
-    full_state = state_abbr_to_name.get(state.upper(), state.upper())
+    # Check if state is full name, convert to abbr
+    state_upper = state.upper()
+    full_names_upper = {v.upper(): k for k, v in state_abbr_to_name.items()}
+    print(f"Input state: {state}, upper: {state_upper}, in dict: {state_upper in full_names_upper}")
+    if state_upper in full_names_upper:
+        abbr = full_names_upper[state_upper]
+        full_state = state_abbr_to_name[abbr]
+        state = abbr
+        print(f"Converted to abbr: {state}, full: {full_state}")
+    else:
+        # Assume abbr, get full
+        full_state = state_abbr_to_name.get(state_upper, state_upper)
+        state = state_upper  # normalize to upper for abbr
+        print(f"Assumed abbr: {state}, full: {full_state}")
 
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -707,8 +721,8 @@ def create_embeddable_water_map(state: str) -> str:
         }}
       }});
       const riversLayer = new FeatureLayer({{
-        url: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Rivers_and_Streams/FeatureServer/0",
-        definitionExpression: "State = '{full_state}'",
+         url: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Rivers_and_Streams/FeatureServer/0",
+         definitionExpression: "State = '{state}'",
         title: "Rivers",
         opacity: 0.6,
         renderer: {{
