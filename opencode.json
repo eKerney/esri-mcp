@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "esri-living-atlas": {
+      "type": "local",
+      "command": ["uv", "run", "--with", "fastmcp", "fastmcp", "run", "/Users/erickerney/dev/ai/esri-mcp/main.py"],
+      "enabled": true
+    }
+  }
+}

@@ -531,9 +531,27 @@ def create_water_map_context(geojson_path: str) -> str:
          }}
        }});
        const watershedsLayer = new FeatureLayer({{
-         url: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Watershed_Boundary_Dataset/FeatureServer/0",
-         title: "Watersheds",
-         opacity: 0.8
+          url: "https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer/3",
+          definitionExpression: "states LIKE '%TX%'",
+          title: "HUC6 Watersheds",
+          opacity: 0.8,
+          renderer: {
+            type: "simple",
+            symbol: {
+              type: "esriSFS",
+              style: "esriSFSSolid",
+              color: [0, 0, 0, 0],
+              outline: {
+                type: "esriSLS",
+                style: "esriSLSSolid",
+                color: [132, 0, 168, 255],
+                width: 1.25
+              }
+            }
+          },
+          minScale: 0,
+          maxScale: 0,
+          labelingInfo: null
        }});
        const damsLayer = new FeatureLayer({{
          url: "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/NID_v1/FeatureServer/0",
@@ -577,7 +595,7 @@ def create_water_map_context(geojson_path: str) -> str:
        view.ui.add(legendButton, "top-left");
        // Debug loading
       riversLayer.when(() => console.log("Rivers loaded"), (error) => console.log("Rivers error", error));
-      watershedsLayer.when(() => console.log("Watersheds loaded"), (error) => console.log("Watersheds error", error));
+       watershedsLayer.when(() => console.log("Watersheds loaded"), (error) => console.log("Watersheds error", error));
     }});
   </script>
 </body>
