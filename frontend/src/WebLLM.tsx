@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { CreateMLCEngine, MLCEngine } from '@mlc-ai/web-llm'
 import './App.css'
 
 interface Tool {
@@ -21,17 +21,32 @@ function App() {
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
-  const [model, setModel] = useState<any>(null)
+  const [engine, setEngine] = useState<MLCEngine | null>(null)
+  const [modelLoading, setModelLoading] = useState(false)
+  const [modelLoadProgress, setModelLoadProgress] = useState('')
 
   useEffect(() => {
     initializeMCP()
-    initializeGemini()
+    loadModel()
   }, [])
 
-  const initializeGemini = () => {
-    const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    setModel(model)
+  const loadModel = async () => {
+    setModelLoading(true)
+    setModelLoadProgress('Initializing WebLLM...')
+    try {
+      const engine = await CreateMLCEngine('Hermes-2-Pro-Mistral-7B-q4f16_1-MLC', {
+        initProgressCallback: (progress) => {
+          setModelLoadProgress(`Loading model: ${(progress.progress * 100).toFixed(1)}%`)
+        }
+      })
+      setEngine(engine)
+      setModelLoadProgress('Model loaded!')
+    } catch (error) {
+      console.error('Model load failed:', error)
+      setModelLoadProgress('Failed to load model')
+    } finally {
+      setModelLoading(false)
+    }
   }
 
   const sendMCPRequest = async (method: string, params: any = {}): Promise<any> => {
@@ -111,39 +126,41 @@ function App() {
   }
 
   const handleQuery = async () => {
-    if (!query.trim() || !model) return
+    if (!query.trim() || !engine) return
     setLoading(true)
     setResult('')
 
     try {
-      // Prepare tools in Gemini format
-      const geminiTools = tools.map(tool => ({
-        functionDeclaration: {
+      // Prepare tools in OpenAI format
+      const openaiTools = tools.map(tool => ({
+        type: 'function',
+        function: {
           name: tool.name,
           description: tool.description.split('\n')[0],
           parameters: tool.inputSchema
         }
       }))
 
-      const chat = model.startChat({
-        tools: geminiTools
+      const messages = [{ role: 'user', content: query }]
+      const reply = await engine.chat.completions.create({
+        messages,
+        tools: openaiTools,
+        tool_choice: 'auto'
       })
 
-      const result = await chat.sendMessage(query)
-      const response = result.response
-      console.log('Gemini response:', response)
+      const message = reply.choices[0].message
+      console.log('LLM response:', message)
 
-      const functionCalls = response.functionCalls()
-      if (functionCalls && functionCalls.length > 0) {
-        const call = functionCalls[0]
-        const toolName = call.name
-        const args = call.args
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        const toolCall = message.tool_calls[0]
+        const toolName = toolCall.function.name
+        const args = JSON.parse(toolCall.function.arguments)
         console.log('Calling tool:', toolName, 'with args:', args)
         const toolResult = await callTool(toolName, args)
         setResult(JSON.stringify(toolResult, null, 2))
       } else {
         // No tool call
-        setResult(response.text() || 'I can help you with geospatial data queries. Try asking about USGS gages, rivers, counties, or other geographic features.')
+        setResult(message.content || 'I can help you with geospatial data queries. Try asking about USGS gages, rivers, counties, or other geographic features.')
         return
       }
 
@@ -165,7 +182,8 @@ function App() {
     <div className="app">
       <h1>MCP Esri Living Atlas Client</h1>
       {!initialized && <p>Initializing MCP connection...</p>}
-      {initialized && model && (
+      {modelLoading && <p>{modelLoadProgress}</p>}
+      {initialized && engine && (
         <>
           <div className="tools">
             <h2>Available Tools ({tools.length})</h2>
@@ -186,7 +204,7 @@ function App() {
               placeholder="Ask about geospatial data (e.g., 'How many USGS gages are in Michigan?')"
               onKeyPress={(e) => e.key === 'Enter' && handleQuery()}
             />
-            <button onClick={handleQuery} disabled={loading}>
+            <button onClick={handleQuery} disabled={loading || modelLoading}>
               {loading ? 'Processing...' : 'Send Query'}
             </button>
           </div>
