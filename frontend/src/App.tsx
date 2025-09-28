@@ -1,19 +1,7 @@
 import { useState, useEffect } from 'react'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { MCPClient, type Tool } from './mcpClient'
 import './App.css'
-
-interface Tool {
-  name: string
-  description: string
-  inputSchema: any
-}
-
-interface MCPResponse {
-  jsonrpc: string
-  id: number
-  result?: any
-  error?: any
-}
 
 function App() {
   const [tools, setTools] = useState<Tool[]>([])
@@ -22,9 +10,26 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
   const [model, setModel] = useState<any>(null)
+  const [client, setClient] = useState<MCPClient | null>(null)
+
+  const prettyNames: { [key: string]: string } = {
+    'query_geojson': 'Get GeoJSON Data',
+    'query_layer': 'Query Layer',
+    'query_point_layer': 'Query Point Layer',
+    'get_layer_fields': 'Get Layer Fields',
+    'get_state_geometry': 'Get State Geometry',
+    'save_geojson': 'Save GeoJSON',
+    'display_geojson': 'Display GeoJSON',
+    'create_arcgis_app': 'Create ArcGIS App',
+    'create_arcgis_app_with_rivers': 'Create ArcGIS App with Rivers',
+    'create_water_map_context': 'Create Water Map Context',
+    'create_embeddable_water_map': 'Create Embeddable Water Map'
+  }
 
   useEffect(() => {
-    initializeMCP()
+    const mcpClient = new MCPClient()
+    setClient(mcpClient)
+    initializeMCP(mcpClient)
     initializeGemini()
   }, [])
 
@@ -39,73 +44,29 @@ function App() {
       const data = await response.json()
       console.log('Available Gemini models:', data.models?.map((m: any) => m.name) || 'None')
       const genAI = new GoogleGenerativeAI(apiKey)
-       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
       setModel(model)
     } catch (error) {
       console.error('Gemini init failed:', error)
     }
   }
 
-  const sendMCPRequest = async (method: string, params: any = {}): Promise<any> => {
-    const id = Date.now()
-    const response = await fetch('/mcp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        method,
-        params
-      })
-    })
-
-    if (!response.body) throw new Error('No response body')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6))
-          if (data.id === id) {
-            return data
-          }
-        }
-      }
-    }
-  }
-
-  const initializeMCP = async () => {
+  const initializeMCP = async (mcpClient: MCPClient) => {
     try {
-      const response = await sendMCPRequest('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'MCP Web Client', version: '1.0' }
-      })
+      const response = await mcpClient.initialize()
       console.log('Initialized:', response.result)
       setInitialized(true)
-      await loadTools()
+      await loadTools(mcpClient)
     } catch (error) {
       console.error('Initialize failed:', error)
       setResult('Failed to initialize MCP connection')
     }
   }
 
-  const loadTools = async () => {
+  const loadTools = async (mcpClient: MCPClient) => {
     try {
-      const response = await sendMCPRequest('tools/list')
-      setTools(response.result.tools)
+      const tools = await mcpClient.listTools()
+      setTools(tools)
     } catch (error) {
       console.error('Load tools failed:', error)
       setResult('Failed to load tools')
@@ -113,9 +74,9 @@ function App() {
   }
 
   const callTool = async (name: string, args: any) => {
+    if (!client) throw new Error('MCP client not initialized')
     try {
-      const response = await sendMCPRequest('tools/call', { name, arguments: args })
-      return response.result
+      return await client.callTool(name, args)
     } catch (error) {
       console.error('Tool call failed:', error)
       throw error
@@ -123,7 +84,7 @@ function App() {
   }
 
   const handleQuery = async () => {
-    if (!query.trim() || !model) return
+    if (!query.trim() || !model || !client) return
     setLoading(true)
     setResult('')
 
@@ -132,7 +93,7 @@ function App() {
       const geminiTools = [{
         functionDeclarations: tools.map(tool => ({
           name: tool.name,
-          description: tool.description.split('\n')[0] + ' Available layers: states (use STATE_NAME = \'Michigan\'), counties (use STATEFP = \'26\'), usgs-gauges (use state = \'MI\'), rivers (use State = \'VA\'), dams, watersheds, impaired-waters, water-quality, sample-points.',
+          description: tool.description,
           parameters: tool.inputSchema
         }))
       }]
@@ -167,7 +128,7 @@ function App() {
         }])
 
         response = result.response
-        setResult(response.text() || JSON.stringify(toolResult, null, 2))
+        setResult(response.text() || toolResult)
       } else {
         // No tool call
         setResult(response.text() || 'I can help you with geospatial data queries. Try asking about USGS gages, rivers, counties, or other geographic features.')
@@ -184,14 +145,14 @@ function App() {
     <div className="app">
       <h1>MCP Esri Living Atlas Client</h1>
       {!initialized && <p>Initializing MCP connection...</p>}
-      {initialized && model && (
+      {initialized && model && client && (
         <>
           <div className="tools">
             <h2>Available Tools ({tools.length})</h2>
             <ul>
               {tools.map(tool => (
                 <li key={tool.name}>
-                  <strong>{tool.name}</strong>: {tool.description.split('\n')[0]}
+                  <strong>{prettyNames[tool.name] || tool.name}</strong>: {tool.description.split('\n')[0]}
                 </li>
               ))}
             </ul>
@@ -212,7 +173,27 @@ function App() {
           {result && (
             <div className="result">
               <h2>Result</h2>
-              <pre>{result}</pre>
+               {result && typeof result === 'string' && result.includes('<!DOCTYPE html>') ? (
+                <>
+                  <div style={{ marginBottom: '10px' }}>
+                    <button onClick={() => {
+                      const html = result.substring(result.indexOf('<!DOCTYPE html>'));
+                      const blob = new Blob([html], { type: 'text/html' });
+                      const url = URL.createObjectURL(blob);
+                      window.open(url);
+                    }}>
+                      Open Map in New Tab
+                    </button>
+                  </div>
+                  <iframe srcDoc={result.substring(result.indexOf('<!DOCTYPE html>'))} style={{ width: '100%', height: '600px', border: '1px solid #ccc' }} />
+                  <details>
+                    <summary>View HTML Source</summary>
+                    <pre>{result}</pre>
+                  </details>
+                </>
+              ) : (
+                <pre>{result}</pre>
+              )}
             </div>
           )}
         </>

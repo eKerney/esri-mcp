@@ -25,8 +25,18 @@ LAYER_MAPPING = {
     "watersheds": "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Watershed_Boundary_Dataset/FeatureServer/0",
     "impaired-waters": "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/EPA_Impaired_Waters_Y2025Q3/FeatureServer/1",
     "water-quality": "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Water_Quality_Monitoring_Stations/FeatureServer/0",
-    "sample-points": "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Census/MapServer/0" # New sample layer
+    "sample-points": "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Census/MapServer/0",
+    "weather-stations": "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NOAA_METAR_current_wind_speed_direction_v1/FeatureServer/0",
+    "raws-stations": "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/PublicView_RAWS/FeatureServer/1",
+    "seismic-stations": "https://services1.arcgis.com/x5wCko8UnSi4h0CB/arcgis/rest/services/gNnAj/FeatureServer/0",
+    "cors-stations": "https://services.arcgis.com/n2VmTtIh6uhV5zfF/arcgis/rest/services/NOAA_CORS_Network_Test/FeatureServer/0",
+    "storm-reports": "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NOAA_storm_reports_v1/FeatureServer/4"
 }
+
+POINT_LAYERS = [
+    "usgs-gauges", "water-quality", "sample-points",
+    "weather-stations", "raws-stations", "seismic-stations", "cors-stations", "storm-reports"
+]
 
 app.http_app().add_middleware(
     CORSMiddleware,
@@ -37,12 +47,72 @@ app.http_app().add_middleware(
 )
 
 @app.tool()
+def query_point_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", return_count_only: bool = False, spatial_filter: Optional[str] = None, return_geometry: bool = False) -> dict:
+    """
+    Queries a point feature layer from the Esri Living Atlas.
+
+    :param layer_name: The name of the point layer to query. Available point layers: usgs-gauges, water-quality, sample-points, weather-stations, raws-stations, seismic-stations, cors-stations, storm-reports.
+    :param where: The WHERE clause for the query. Use field names like 'state' for usgs-gauges (e.g., "state = 'MI'"), 'STATE_FIPS' for sample-points (e.g., "STATE_FIPS = '26'"), 'COUNTRY' for weather-stations (e.g., "COUNTRY = 'United States'"), 'State' for raws-stations (e.g., "State = 'Michigan'"), 'Name' for seismic-stations (e.g., "Name LIKE '%Michigan%'"), 'Station Name' for cors-stations (e.g., "Station Name LIKE '%Michigan%'"), etc. Default is "1=1" for all features.
+    :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all fields.
+    :param return_count_only: Set to true to return only the feature count, not the data.
+    :param spatial_filter: A spatial filter in Esri JSON format (optional).
+    :param return_geometry: Set to true to include geometry in the response.
+
+    Examples:
+    - Count USGS gages in Michigan: layer_name="usgs-gauges", where="state = 'MI'", return_count_only=true
+    - Count census points in Michigan: layer_name="sample-points", where="STATE_FIPS = '26'", return_count_only=true
+    - Count weather stations in the US: layer_name="weather-stations", where="COUNTRY = 'United States'", return_count_only=true
+    - Count RAWS stations in Michigan: layer_name="raws-stations", where="State = 'Michigan'", return_count_only=true
+    - Count storm reports in Texas: layer_name="storm-reports", where="STATE = 'TX'", return_count_only=true
+
+    :return: The JSON response from the server, or {"error": "message"} if failed.
+    """
+    if layer_name not in POINT_LAYERS:
+        return {"error": f"Invalid point layer name: {layer_name}. Available point layers: {POINT_LAYERS}"}
+
+    # Reuse the logic from query_layer
+    if layer_name not in LAYER_MAPPING:
+        return {"error": f"Invalid layer name: {layer_name}. Available layers: {list(LAYER_MAPPING.keys())}"}
+
+    layer_url = LAYER_MAPPING[layer_name]
+
+    # Always include f=json as a query parameter
+    query_url = f"{layer_url}/query?f=json"
+
+    headers = {"Accept": "application/json"}
+
+    params = {
+        "where": where,
+        "outFields": out_fields,
+        "returnCountOnly": str(return_count_only).lower()
+    }
+    if return_geometry:
+        params["returnGeometry"] = "true"
+    if spatial_filter:
+        # Parse the JSON string for geometry
+        geometry_obj = json.loads(spatial_filter)
+        if "rings" in geometry_obj:
+            # Polygon
+            params["geometry"] = urllib.parse.quote(spatial_filter)
+            params["geometryType"] = "esriGeometryPolygon"
+        else:
+            # Envelope
+            params["geometry"] = f"{geometry_obj['xmin']},{geometry_obj['ymin']},{geometry_obj['xmax']},{geometry_obj['ymax']}"
+            params["geometryType"] = "esriGeometryEnvelope"
+        params["spatialRel"] = "esriSpatialRelIntersects"
+    response = requests.post(query_url, data=params, headers=headers, timeout=30)
+
+    response.raise_for_status()
+    return response.json()
+
+
+@app.tool()
 def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", return_count_only: bool = False, spatial_filter: Optional[str] = None, return_geometry: bool = False) -> dict:
     """
     Queries a feature layer from the Esri Living Atlas.
 
-    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points.
-    :param where: The WHERE clause for the query. Use field names like 'state' for usgs-gauges (e.g., "state = 'MI'"), 'STATE_NAME' for states (e.g., "STATE_NAME = 'Michigan'"), 'State' for rivers (e.g., "State = 'VA'"), etc. Default is "1=1" for all features.
+    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points, weather-stations, raws-stations, seismic-stations, cors-stations.
+    :param where: The WHERE clause for the query. Use field names like 'state' for usgs-gauges (e.g., "state = 'MI'"), 'STATE_NAME' for states (e.g., "STATE_NAME = 'Michigan'"), 'State' for rivers (e.g., "State = 'VA'"), 'COUNTRY' for weather-stations (e.g., "COUNTRY = 'United States'"), 'State' for raws-stations (e.g., "State = 'Michigan'"), 'Name' for seismic-stations (e.g., "Name LIKE '%Michigan%'"), etc. Default is "1=1" for all features.
     :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all fields.
     :param return_count_only: Set to true to return only the feature count, not the data.
     :param spatial_filter: A spatial filter in Esri JSON format (optional).
@@ -52,6 +122,7 @@ def query_layer(layer_name: str, where: str = "1=1", out_fields: str = "*", retu
     - Count USGS gages in Michigan: layer_name="usgs-gauges", where="state = 'MI'", return_count_only=true
     - Get state boundaries: layer_name="states", where="STATE_NAME = 'Michigan'", return_geometry=true
     - Query rivers in Virginia: layer_name="rivers", where="State = 'VA'"
+    - Query storm reports in Texas: layer_name="storm-reports", where="STATE = 'TX'"
 
     :return: The JSON response from the server, or {"error": "message"} if failed.
     """
@@ -94,7 +165,7 @@ def get_layer_fields(layer_name: str) -> dict:
     """
     Gets the fields of a feature layer from the Esri Living Atlas.
 
-    :param layer_name: The name of the layer to get fields from. Available layers: states, counties, usgs-gauges, sample-points.
+    :param layer_name: The name of the layer to get fields from. Available layers: states, counties, usgs-gauges, sample-points, weather-stations, raws-stations, seismic-stations, cors-stations, storm-reports.
     :return: The JSON response from the server.
     """
     if layer_name not in LAYER_MAPPING:
@@ -137,8 +208,8 @@ def query_geojson(layer_name: str, where: str = "1=1", out_fields: str = "*", li
     """
     Queries a feature layer and returns the results as a GeoJSON string.
 
-    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points.
-    :param where: The WHERE clause for the query (e.g., "STATE = 'MI'").
+    :param layer_name: The name of the layer to query. Available layers: states, counties, usgs-gauges, rivers, dams, watersheds, impaired-waters, water-quality, sample-points, weather-stations, raws-stations, seismic-stations, cors-stations.
+    :param where: The WHERE clause for the query (e.g., "STATE = 'MI'", "COUNTRY = 'United States'").
     :param out_fields: Comma-separated list of fields to return (e.g., "NAME,STATE"). Use "*" for all.
     :param limit: Maximum number of features to return (default 1000).
     :return: A GeoJSON FeatureCollection as a string, or error message.
@@ -607,10 +678,11 @@ def create_water_map_context(geojson_path: str) -> str:
         view: view
       }});
        view.ui.add(legend, "bottom-right");
-       const legendButton = document.createElement("button");
-       legendButton.innerHTML = "Toggle Legend";
-       legendButton.onclick = () => {{ legend.visible = !legend.visible; }};
-       view.ui.add(legendButton, "top-left");
+        const legendButton = document.createElement("button");
+        legendButton.innerHTML = "Toggle Legend";
+        legendButton.style.cssText = 'position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(0,0,0,0.7); color: white; border: 1px solid white; padding: 5px 10px; cursor: pointer;';
+        legendButton.onclick = () => {{ legend.visible = !legend.visible; }};
+        view.ui.add(legendButton, "top-left");
        // Debug loading
       riversLayer.when(() => console.log("Rivers loaded"), (error) => console.log("Rivers error", error));
        watershedsLayer.when(() => console.log("Watersheds loaded"), (error) => console.log("Watersheds error", error));
@@ -678,7 +750,7 @@ def create_embeddable_water_map(state: str) -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Water Map - {full_state}</title>
-  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css" />
+  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/dark/main.css" />
   <script src="https://js.arcgis.com/4.28/"></script>
   <style>
     html, body, #viewDiv {{
@@ -696,8 +768,9 @@ def create_embeddable_water_map(state: str) -> str:
       "esri/Map",
       "esri/views/MapView",
       "esri/layers/FeatureLayer",
-      "esri/widgets/Legend"
-    ], function(Map, MapView, FeatureLayer, Legend) {{
+      "esri/widgets/Legend",
+      "esri/widgets/Expand"
+    ], function(Map, MapView, FeatureLayer, Legend, Expand) {{
       const gagesLayer = new FeatureLayer({{
         url: "https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer/0",
         definitionExpression: "state = '{state}'",
@@ -790,10 +863,24 @@ def create_embeddable_water_map(state: str) -> str:
         zoom: 5
       }});
       const legend = new Legend({{
-        view: view
+        view: view,
+        style: 'card'
       }});
-      view.ui.add(legend, "bottom-right");
-    }});
+      const expand = new Expand({{
+        view: view,
+        content: legend,
+        expanded: false
+      }});
+      view.ui.add(expand, "bottom-right");
+      // Zoom to features
+      Promise.all([gagesLayer.when(), riversLayer.when(), damsLayer.when(), watershedsLayer.when()]).then(() => {{
+        const extents = [gagesLayer, riversLayer, damsLayer, watershedsLayer].map(layer => layer.fullExtent).filter(ext => ext);
+        if (extents.length > 0) {{
+          const combinedExtent = extents.reduce((acc, ext) => acc.union(ext));
+          view.goTo(combinedExtent).catch(err => console.log('Zoom error:', err));
+        }}
+      }});
+     }});
   </script>
 </body>
 </html>"""
