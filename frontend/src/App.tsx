@@ -11,6 +11,59 @@ function App() {
   const [initialized, setInitialized] = useState(false)
   const [model, setModel] = useState<any>(null)
   const [client, setClient] = useState<MCPClient | null>(null)
+  const getDefaultMapHtml = () => {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Default Map</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/dark/main.css" />
+  <script src="https://js.arcgis.com/4.28/"></script>
+  <style>
+    html, body, #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/widgets/Legend",
+      "esri/widgets/Expand"
+    ], function(Map, MapView, Legend, Expand) {
+      const map = new Map({
+        basemap: "dark-gray-vector"
+      });
+      const view = new MapView({
+        container: "viewDiv",
+        map: map,
+        center: [-98.5795, 39.8283],
+        zoom: 5
+      });
+      const legend = new Legend({
+        view: view,
+        style: 'card'
+      });
+      const expand = new Expand({
+        view: view,
+        content: legend,
+        expanded: false
+      });
+      view.ui.add(expand, "bottom-right");
+    });
+  </script>
+</body>
+</html>`;
+  };
+
+  const [mapUrl, setMapUrl] = useState<string>('')
 
   const prettyNames: { [key: string]: string } = {
     'query_geojson': 'Get GeoJSON Data',
@@ -22,8 +75,8 @@ function App() {
     'display_geojson': 'Display GeoJSON',
     'create_arcgis_app': 'Create ArcGIS App',
     'create_arcgis_app_with_rivers': 'Create ArcGIS App with Rivers',
-    'create_water_map_context': 'Create Water Map Context',
-    'create_embeddable_water_map': 'Create Embeddable Water Map'
+    'create_water_map_context': 'Create Water Map with Additional Context',
+    'create_embeddable_water_map': 'Generate Multi-Layer Water Map in Browser'
   }
 
   useEffect(() => {
@@ -31,6 +84,11 @@ function App() {
     setClient(mcpClient)
     initializeMCP(mcpClient)
     initializeGemini()
+    // Set default map
+    const defaultHtml = getDefaultMapHtml();
+    const blob = new Blob([defaultHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    setMapUrl(url);
   }, [])
 
   const initializeGemini = async () => {
@@ -128,7 +186,15 @@ function App() {
         }])
 
         response = result.response
-        setResult(response.text() || toolResult)
+        const geminiText = response.text()
+        if (geminiText) {
+          setResult(geminiText)
+        } else if (typeof toolResult === 'string') {
+          setResult(toolResult)
+        } else {
+          // Handle object result
+          setResult(JSON.stringify(toolResult, null, 2))
+        }
       } else {
         // No tool call
         setResult(response.text() || 'I can help you with geospatial data queries. Try asking about USGS gages, rivers, counties, or other geographic features.')
@@ -170,22 +236,28 @@ function App() {
               {loading ? 'Processing...' : 'Send Query'}
             </button>
           </div>
+          <div className="result">
+            <h2>Map View</h2>
+            <iframe src={mapUrl} style={{ width: '100%', height: '600px', border: 'none', borderRadius: '12px' }} />
+          </div>
           {result && (
             <div className="result">
-              <h2>Result</h2>
-               {result && typeof result === 'string' && result.includes('<!DOCTYPE html>') ? (
+              <h2>Query Result</h2>
+              {result && typeof result === 'string' && result.includes('<!DOCTYPE html>') ? (
                 <>
+                  <div style={{ marginBottom: '10px', padding: '1rem', background: 'rgba(0, 255, 0, 0.1)', border: '1px solid #00ff00', borderRadius: '8px', color: '#ffffff' }}>
+                    Map generated successfully! Click "Update Map View" to display the results.
+                  </div>
                   <div style={{ marginBottom: '10px' }}>
                     <button onClick={() => {
                       const html = result.substring(result.indexOf('<!DOCTYPE html>'));
                       const blob = new Blob([html], { type: 'text/html' });
                       const url = URL.createObjectURL(blob);
-                      window.open(url);
+                      setMapUrl(url);
                     }}>
-                      Open Map in New Tab
+                      Update Map View
                     </button>
                   </div>
-                  <iframe srcDoc={result.substring(result.indexOf('<!DOCTYPE html>'))} style={{ width: '100%', height: '600px', border: '1px solid #ccc' }} />
                   <details>
                     <summary>View HTML Source</summary>
                     <pre>{result}</pre>

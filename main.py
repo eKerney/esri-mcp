@@ -872,14 +872,20 @@ def create_embeddable_water_map(state: str) -> str:
         expanded: false
       }});
       view.ui.add(expand, "bottom-right");
-      // Zoom to features
-      Promise.all([gagesLayer.when(), riversLayer.when(), damsLayer.when(), watershedsLayer.when()]).then(() => {{
-        const extents = [gagesLayer, riversLayer, damsLayer, watershedsLayer].map(layer => layer.fullExtent).filter(ext => ext);
-        if (extents.length > 0) {{
-          const combinedExtent = extents.reduce((acc, ext) => acc.union(ext));
-          view.goTo(combinedExtent).catch(err => console.log('Zoom error:', err));
-        }}
-      }});
+             // Zoom to gaging stations only
+       gagesLayer.when().then(() => {{
+         const extent = gagesLayer.fullExtent;
+         if (extent) {{
+           view.goTo(extent).catch(err => console.log('Zoom error:', err));
+         }} else {{
+           console.log('No extent for gages, zooming to default');
+           // Fallback: Zoom to approximate US center if no extent
+           view.goTo({{
+             center: [-98.5795, 39.8283],
+             zoom: 4
+           }}).catch(err => console.log('Fallback zoom error:', err));
+         }}
+       }}).catch(err => console.log('Gages layer load error:', err));
      }});
   </script>
 </body>
